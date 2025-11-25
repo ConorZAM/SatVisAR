@@ -1,23 +1,40 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Android;
 
-/// <summary>
-/// This class is responsible for maintaining the satellites in the simulation.
-/// There are a few jobs assigned to the class which could be split into separate managers for ease of use.
-/// Jobs include:
-/// - Simple Euler forward integration of all satellite positions
-/// - FOV culling using camera direction and satellite positions to ensure only visible satellites are drawn (reduces computation cost of drawing unnecessary satellites)
-/// - Drawing of satellites using simple billboard and texture, note satellites don't exist as game objects as the overheads would be too expensive with 50,000+ objects
-/// - Exposing public functions for UI tools to adjust rendering of satellites. Future work will also filter which satellites should be rendered.
-/// </summary>
-public class SatelliteManager : MonoBehaviour, ISelectionManager
+public class SatelliteManagerNew : MonoBehaviour
 {
     // Satellites contain a lot of information, including their positions.
     // However, it is faster to cache frequently used data so we don't have to access satellite instances during the rendering
     Satellite[] allSatellites = new Satellite[0];
+
+    int[] filteredSatellites = new int[0];
+
+    public void ApplyFilters(string orbitType)
+    {
+        if (orbitType == "All")
+        {
+            filteredSatellites = new int[0];
+            return;
+        }
+
+        Debug.Log($"Filtering for orbit type: {orbitType}");
+
+        List<int> filtered = new List<int>();
+
+        for (int i = 0; i < allSatellites.Length; i++)
+        {
+            if (allSatellites[i].orbitType == orbitType)
+            {
+                filtered.Add(i);
+            }
+        }
+
+        Debug.Log($"Found {filtered.Count} satellites");
+
+        filteredSatellites = filtered.ToArray();
+    }
+
     /// <summary>
     /// World space positions of satellites
     /// </summary>
@@ -51,33 +68,11 @@ public class SatelliteManager : MonoBehaviour, ISelectionManager
     public Material selectedSatelliteMaterial;
     public float quadSize = 1f;
     public float satelliteSize = 0.05f;
+    public string renderLayerName;
+    int renderLayer;
+    const int batchSize = 1023;
 
-    /// <summary>
-    /// Decimal degrees
-    /// </summary>
-    [Header("User Location")]
-    public double viewerLat = 51.5074;   // London
-
-    /// <summary>
-    /// Decimal degrees
-    /// </summary>
-    public double viewerLon = -0.1278;
-
-    /// <summary>
-    /// Kilometers
-    /// </summary>
-    public double viewerAlt = 0.030;      // km
-
-    /// <summary>
-    /// Degrees
-    /// </summary>
-    public float initialHeading = 0;
-
-    Vector3 observerPositionECEF;
-
-    [Tooltip("The AR session origin. Needed to realign the session once we have the user's location and heading.")]
-    public GameObject origin;
-    string alignmentResult;
+    public UserLocationManager userLocationManager;
 
     /// <summary>
     /// Fixed distance used to render satellites - this is an optimisation for the AR app and a cheap way to avoid issues with floating point precision
@@ -116,17 +111,17 @@ public class SatelliteManager : MonoBehaviour, ISelectionManager
 
     private List<Matrix4x4[]> instanceBatches = new();
 
+    public Camera cam;
+    new Transform camera;
+
     #region Unity Functions
     void Start()
     {
-        UpdateOrientation();
-
-        // Periodically update the sun's rotation
-        InvokeRepeating(nameof(UpdateSunRotation), 60f, 60f);
+        renderLayer = LayerMask.NameToLayer(renderLayerName);
+        camera = cam.transform;
 
         Screen.sleepTimeout = SleepTimeout.NeverSleep;
-
-        //LoadSatelliteData();
+        Screen.orientation = ScreenOrientation.Portrait;
 
         quadMesh = GenerateBillboardQuad();
 
@@ -149,16 +144,16 @@ public class SatelliteManager : MonoBehaviour, ISelectionManager
     private void FixedUpdate()
     {
         dt = Time.fixedDeltaTime;
-        Transform cameraTransform = Camera.main.transform;
-        Quaternion rotation = cameraTransform.rotation;
-        Vector3 cameraForward = cameraTransform.forward;
+        //Transform cameraTransform = Camera.main.transform;
+        Quaternion rotation = camera.rotation;
+        Vector3 cameraForward = camera.forward;
         for (int i = 0; i < allSatellites.Length; i++)
         {
             // Integrate orbit (not super accurate, but works for short intervals)
             allSatellites[i].UpdatePosition(dt);
 
             // Get the satellite's relative position to the observer
-            currentPositions[i] = allSatellites[i].positionITRS - observerPositionECEF;
+            currentPositions[i] = allSatellites[i].positionITRS - userLocationManager.userPositionECEF;
 
             // Convert to direction
             directions[i] = Vector3.Normalize(currentPositions[i]);
@@ -188,9 +183,35 @@ public class SatelliteManager : MonoBehaviour, ISelectionManager
         // Also, I'm not sure if we want to offset the positions of the satellites...
         // There's an entire diameter of earth in there as well that would change what we can see!
 
-        Camera cam = Camera.main;
-        Vector3 camForward = cam.transform.forward;
-        Vector3 camPos = cam.transform.position;
+        //Vector3 camForward = cam.transform.forward;
+
+        //Quaternion rotation = camera.rotation;
+
+        if (filteredSatellites.Length > 0)
+        {
+            DoTheRest(filteredSatellites);
+        }
+        else
+        {
+            DoTheRest(allSatellites);
+        }
+
+        // Next step here is to get satellites within a really small fov and label them
+        // If we can get n satellites closest to a dot product of 1 then we're onto a winner
+        // Then we want to colour code them and have a UI element which writes labels according to the satellite names.
+        // Note that i should correspond to the satellite array!
+
+    }
+
+    /// <summary>
+    /// This is actually the worst wow...
+    /// </summary>
+    void DoTheRest(Satellite[] satellites)
+    {
+        Vector3 cameraForward = camera.forward;
+        //cam.transform.rotation = rotation;
+
+        Vector3 camPos = camera.position;
         cosFOV = Mathf.Cos(cullFOV * 0.5f * Mathf.Deg2Rad);
 
         List<Matrix4x4> visibleMatrices = new();
@@ -210,14 +231,10 @@ public class SatelliteManager : MonoBehaviour, ISelectionManager
         int labelCount = 0;
 
         Vector3 renderPos;
+        Vector3 userPositionECEF = userLocationManager.userPositionECEF;
         Matrix4x4 mtx;
 
-        // Next step here is to get satellites within a really small fov and label them
-        // If we can get n satellites closest to a dot product of 1 then we're onto a winner
-        // Then we want to colour code them and have a UI element which writes labels according to the satellite names.
-        // Note that i should correspond to the satellite array!
-
-        for (int i = 0; i < allSatellites.Length; i++)
+        for (int i = 0; i < satellites.Length; i++)
         {
             Vector3 dir = directions[i];
 
@@ -229,7 +246,7 @@ public class SatelliteManager : MonoBehaviour, ISelectionManager
              * The potential issue here is that we might be searching the array of labelled satellites a lot unecessarily..
              */
 
-            if ((hideBelowHorizon && Vector3.Dot(dir, observerPositionECEF) < 0) || i == selectedIndex)
+            if (hideBelowHorizon && Vector3.Dot(dir, userPositionECEF) < 0)
             {
                 continue;
             }
@@ -239,7 +256,7 @@ public class SatelliteManager : MonoBehaviour, ISelectionManager
                 continue;
             }
 
-            float dot = Vector3.Dot(camForward, dir);
+            float dot = Vector3.Dot(cameraForward, dir);
 
             // Lazy way to filter for sats that are close to the centre of view
             if (dot > labelCull)
@@ -304,7 +321,6 @@ public class SatelliteManager : MonoBehaviour, ISelectionManager
 
         // Batch draw calls
         instanceBatches.Clear();
-        const int batchSize = 1023;
         for (int i = 0; i < visibleMatrices.Count; i += batchSize)
         {
             int count = Mathf.Min(batchSize, visibleMatrices.Count - i);
@@ -314,18 +330,176 @@ public class SatelliteManager : MonoBehaviour, ISelectionManager
         foreach (Matrix4x4[] batch in instanceBatches)
         {
             //Graphics.DrawMeshInstanced(rp, quadMesh, 0, batch);
-            Graphics.DrawMeshInstanced(quadMesh, 0, satelliteMaterial, batch);
+            Graphics.DrawMeshInstanced(quadMesh, 0, satelliteMaterial, batch, batch.Length, null, UnityEngine.Rendering.ShadowCastingMode.Off, false, renderLayer);
         }
 
         // Draw the labelled satellites!
-        Graphics.DrawMeshInstanced(quadMesh, 0, labelledSatelliteMaterial, labelledMatrices);
+        Graphics.DrawMeshInstanced(quadMesh, 0, labelledSatelliteMaterial, labelledMatrices, labelledMatrices.Length, null, UnityEngine.Rendering.ShadowCastingMode.Off, false, renderLayer);
 
         // Draw the selected satellite
         if (selectedIndex > 0)
         {
             renderPos = camPos + (directions[selectedIndex] * shellDistance);
             mtx = Matrix4x4.TRS(renderPos, satRotations[selectedIndex], Vector3.one * satelliteSize);
-            Graphics.DrawMesh(quadMesh, mtx, selectedSatelliteMaterial, 0);
+            Graphics.DrawMesh(quadMesh, mtx, selectedSatelliteMaterial, renderLayer);
+        }
+
+        // Update the labels
+        // Sorting the IDs so we have more consistent labels
+        Array.Sort(labelIdx);
+        for (int i = 0; i < numLabels; i++)
+        {
+            if (labelIdx[i] > -1)
+            {
+                labels[i].SetSatellite(allSatellites[labelIdx[i]], labelIdx[i]);
+            }
+            else
+            {
+                labels[i].Hide();
+            }
+        }
+    }
+
+    /// <summary>
+    /// This is actually the worst wow...
+    /// </summary>
+    void DoTheRest(int[] satellites)
+    {
+        Vector3 cameraForward = camera.forward;
+        //cam.transform.rotation = rotation;
+
+        Vector3 camPos = camera.position;
+        cosFOV = Mathf.Cos(cullFOV * 0.5f * Mathf.Deg2Rad);
+
+        List<Matrix4x4> visibleMatrices = new();
+
+        // New info for labelling
+        Matrix4x4[] labelledMatrices = new Matrix4x4[numLabels];
+        labelDots = new float[numLabels];
+        labelIdx = new int[numLabels];
+        for (int i = 0; i < numLabels; i++)
+        {
+            labelDots[i] = 1;
+            labelIdx[i] = -1;
+        }
+
+        float furthestDot = 0;
+        int furthestDotIndex = 0;
+        int labelCount = 0;
+
+        Vector3 renderPos;
+        Vector3 userPositionECEF = userLocationManager.userPositionECEF;
+        Matrix4x4 mtx;
+
+        for (int i = 0; i < satellites.Length; i++)
+        {
+            int idx = satellites[i];
+            Vector3 dir = directions[idx];
+
+            /* Sorting the satellites based on nearest to the camera direction
+             * I think we can have an array of nearestMatrices and an array of their dot product results
+             * If we get a satellite which is closer, then we pop out the furthest satellite from the nearestMatrices array and add it
+             * to the visibleMatrices array.
+             * 
+             * The potential issue here is that we might be searching the array of labelled satellites a lot unecessarily..
+             */
+
+            if (hideBelowHorizon && Vector3.Dot(dir, userPositionECEF) < 0)
+            {
+                continue;
+            }
+
+            if (idx == selectedIndex)
+            {
+                continue;
+            }
+
+            float dot = Vector3.Dot(cameraForward, dir);
+
+            // Lazy way to filter for sats that are close to the centre of view
+            if (dot > labelCull)
+            {
+                renderPos = camPos + (dir * shellDistance);
+                //mtx = Matrix4x4.TRS(renderPos, Quaternion.LookRotation(dir), Vector3.one * 0.05f);
+                mtx = Matrix4x4.TRS(renderPos, satRotations[idx], Vector3.one * satelliteSize);
+
+                if (labelCount < numLabels)
+                {
+                    // Just add the new label
+                    labelledMatrices[labelCount] = mtx;
+                    labelDots[labelCount] = dot;
+                    labelIdx[labelCount] = idx;
+
+                    if (dot < furthestDot)
+                    {
+                        furthestDot = dot;
+                        furthestDotIndex = labelCount;
+                    }
+
+                    labelCount++;
+                }
+                else
+                {
+                    // If we have a satellite closer than our furthest label so far, replace it
+                    if (dot > furthestDot)
+                    {
+                        // Move the previous furthest over to the regular rendering list
+                        visibleMatrices.Add(labelledMatrices[furthestDotIndex]);
+
+                        // Replace
+                        labelledMatrices[furthestDotIndex] = mtx;
+                        labelDots[furthestDotIndex] = dot;
+                        labelIdx[furthestDotIndex] = idx;
+
+                        // Update the furthest info
+                        furthestDot = 1f;
+                        for (int l = 0; l < labelCount; l++)
+                        {
+                            if (labelDots[l] < furthestDot)
+                            {
+                                furthestDot = labelDots[l];
+                                furthestDotIndex = l;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        visibleMatrices.Add(mtx);
+                    }
+                }
+            }
+            // Just need to check if the satellite is within the camera's FOV
+            else if (dot > cosFOV)
+            {
+                renderPos = camPos + (dir * shellDistance);
+                mtx = Matrix4x4.TRS(renderPos, satRotations[idx], Vector3.one * satelliteSize);
+                visibleMatrices.Add(mtx);
+            }
+        }
+
+        // Batch draw calls
+        instanceBatches.Clear();
+        for (int i = 0; i < visibleMatrices.Count; i += batchSize)
+        {
+            int count = Mathf.Min(batchSize, visibleMatrices.Count - i);
+            instanceBatches.Add(visibleMatrices.GetRange(i, count).ToArray());
+        }
+
+        foreach (Matrix4x4[] batch in instanceBatches)
+        {
+            //Graphics.DrawMeshInstanced(rp, quadMesh, 0, batch);
+            Graphics.DrawMeshInstanced(quadMesh, 0, satelliteMaterial, batch, batch.Length, null, UnityEngine.Rendering.ShadowCastingMode.Off, false, renderLayer);
+        }
+
+        // Draw the labelled satellites!
+        Graphics.DrawMeshInstanced(quadMesh, 0, labelledSatelliteMaterial, labelledMatrices, labelledMatrices.Length, null, UnityEngine.Rendering.ShadowCastingMode.Off, false, renderLayer);
+
+        // Draw the selected satellite
+        if (selectedIndex > 0)
+        {
+            renderPos = camPos + (directions[selectedIndex] * shellDistance);
+            mtx = Matrix4x4.TRS(renderPos, satRotations[selectedIndex], Vector3.one * satelliteSize);
+            Graphics.DrawMesh(quadMesh, mtx, selectedSatelliteMaterial, renderLayer);
         }
 
         // Update the labels
@@ -348,6 +522,11 @@ public class SatelliteManager : MonoBehaviour, ISelectionManager
 
     #region UI Functions
 
+    public void SetSelection(int selection)
+    {
+        selectedIndex = selection;
+    }
+
     public void SetSatelliteSize(float size)
     {
         satelliteSize = size;
@@ -369,271 +548,7 @@ public class SatelliteManager : MonoBehaviour, ISelectionManager
         hideBelowHorizon = !showBelowHorizon;
     }
 
-    public void SetSelection(int selection)
-    {
-        selectedIndex = selection;
-    }
-
     #endregion UI Functions
-
-    #region Sun Orientation
-
-    public Light sunLight;
-
-    void UpdateSunRotation()
-    {
-        DateTime utcNow = DateTime.UtcNow;
-        (double azimuth, double elevation) = GetSunPosition(utcNow, viewerLat, viewerLon);
-        Vector3 sunDirection = SunDirectionFromAzEl(azimuth, elevation);
-        sunLight.transform.rotation = Quaternion.LookRotation(sunDirection);
-    }
-
-    /// <summary>
-    /// Calculate Sun azimuth and elevation (degrees) from UTC and location.
-    /// Uses simplified NOAA algorithm.
-    /// </summary>
-    private (double azimuth, double elevation) GetSunPosition(DateTime utcTime, double lat, double lon)
-    {
-        // Convert to Julian Day
-        int year = utcTime.Year;
-        int month = utcTime.Month;
-        int day = utcTime.Day;
-        double hour = utcTime.Hour + (utcTime.Minute / 60.0) + (utcTime.Second / 3600.0);
-
-        double d = (367 * year) - (7 * (year + ((month + 9) / 12)) / 4) +
-                   (275 * month / 9) + day - 730530 + (hour / 24.0);
-
-        // Mean anomaly of the Sun
-        double M = (357.5291 + (0.98560028 * d)) % 360;
-        if (M < 0)
-        {
-            M += 360;
-        }
-
-        // Mean longitude of the Sun
-        double L = (280.459 + (0.98564736 * d)) % 360;
-        if (L < 0)
-        {
-            L += 360;
-        }
-
-        // Ecliptic longitude
-        double lambda = L + (1.915 * Math.Sin(M * Mathf.Deg2Rad)) + (0.020 * Math.Sin(2 * M * Mathf.Deg2Rad));
-
-        // Obliquity of the ecliptic
-        double epsilon = 23.439 - (0.00000036 * d);
-
-        // Right ascension
-        double alpha = Math.Atan2(Math.Cos(epsilon * Mathf.Deg2Rad) * Math.Sin(lambda * Mathf.Deg2Rad),
-                                  Math.Cos(lambda * Mathf.Deg2Rad)) * Mathf.Rad2Deg;
-        if (alpha < 0)
-        {
-            alpha += 360;
-        }
-
-        // Declination
-        double delta = Math.Asin(Math.Sin(epsilon * Mathf.Deg2Rad) * Math.Sin(lambda * Mathf.Deg2Rad)) * Mathf.Rad2Deg;
-
-        // Sidereal time
-        double GMST = (18.697374558 + (24.06570982441908 * d)) % 24;
-        double LMST = ((GMST * 15) + lon) % 360;
-        if (LMST < 0)
-        {
-            LMST += 360;
-        }
-
-        // Hour angle
-        double H = LMST - alpha;
-        if (H < -180)
-        {
-            H += 360;
-        }
-
-        if (H > 180)
-        {
-            H -= 360;
-        }
-
-        // Elevation
-        double elevation = Math.Asin(
-            (Math.Sin(lat * Mathf.Deg2Rad) * Math.Sin(delta * Mathf.Deg2Rad)) +
-            (Math.Cos(lat * Mathf.Deg2Rad) * Math.Cos(delta * Mathf.Deg2Rad) * Math.Cos(H * Mathf.Deg2Rad))
-        ) * Mathf.Rad2Deg;
-
-        // Azimuth
-        double azimuth = Math.Atan2(
-            -Math.Sin(H * Mathf.Deg2Rad),
-            (Math.Tan(delta * Mathf.Deg2Rad) * Math.Cos(lat * Mathf.Deg2Rad)) -
-            (Math.Sin(lat * Mathf.Deg2Rad) * Math.Cos(H * Mathf.Deg2Rad))
-        ) * Mathf.Rad2Deg;
-
-        if (azimuth < 0)
-        {
-            azimuth += 360;
-        }
-
-        return (azimuth, elevation);
-    }
-
-    /// <summary>
-    /// Convert azimuth & elevation (degrees) into Unity world direction.
-    /// Azimuth: degrees clockwise from North.
-    /// Elevation: degrees above horizon.
-    /// </summary>
-    private Vector3 SunDirectionFromAzEl(double azimuth, double elevation)
-    {
-        float azRad = Mathf.Deg2Rad * (float)azimuth;
-        float elRad = Mathf.Deg2Rad * (float)elevation;
-
-        // Convert spherical (az, el) to Cartesian (x, y, z)
-        float x = Mathf.Cos(elRad) * Mathf.Sin(azRad);
-        float y = Mathf.Sin(elRad);
-        float z = Mathf.Cos(elRad) * Mathf.Cos(azRad);
-
-        // Unity: Y up, Z forward
-        return new Vector3(x, y, z);
-    }
-
-    #endregion Sun Orientation
-
-    #region User Location
-
-    public void UpdateOrientation()
-    {
-        StartCoroutine(AlignView());
-    }
-
-    IEnumerator AlignView()
-    {
-        alignmentResult = "Initialising";
-        //yield return null;
-        // Request permission if not granted
-        if (!Permission.HasUserAuthorizedPermission(Permission.FineLocation))
-        {
-            Permission.RequestUserPermission(Permission.FineLocation);
-            yield return new WaitForSeconds(1f);
-        }
-
-        // Check if the user has location service enabled.
-        if (!Input.location.isEnabledByUser)
-        {
-            Debug.LogWarning("Location not enabled on device or app does not have permission to access location");
-            alignmentResult = "Location not enabled";
-            yield return null;
-        }
-
-        // Starts the location service.
-        Debug.LogWarning("Starting location service");
-
-        float desiredAccuracyInMeters = 10f;
-        float updateDistanceInMeters = 10f;
-
-        Input.compass.enabled = true;
-
-        Input.location.Start(desiredAccuracyInMeters, updateDistanceInMeters);
-
-        // Waits until the location service initializes
-        int maxWait = 20;
-        while (Input.location.status == LocationServiceStatus.Initializing && maxWait > 0)
-        {
-            yield return new WaitForSeconds(1);
-            maxWait--;
-        }
-
-        // If the service didn't initialize in 20 seconds this cancels location service use.
-        if (maxWait < 1)
-        {
-            Debug.LogError("Timed out");
-            alignmentResult = "Timed out";
-            Input.location.Stop();
-            yield break;
-        }
-
-        // If the connection failed this cancels location service use.
-        if (Input.location.status == LocationServiceStatus.Failed)
-        {
-            Debug.LogError("Unable to determine device location");
-            alignmentResult = "Location failed";
-            Input.location.Stop();
-            yield break;
-        }
-        else
-        {
-            alignmentResult = "Getting compass reading";
-
-            // If the connection succeeded, this retrieves the device's current location and displays it in the Console window.
-            Debug.LogWarning("Location: " + Input.location.lastData.latitude + " " + Input.location.lastData.longitude + " " + Input.location.lastData.altitude + " " + Input.location.lastData.horizontalAccuracy + " " + Input.location.lastData.timestamp);
-            Debug.LogWarning($"Heading: {Input.compass.trueHeading}");
-            viewerLat = Input.location.lastData.latitude;
-            viewerLon = Input.location.lastData.longitude;
-            viewerAlt = Input.location.lastData.altitude / 1000f;
-
-            // Let the compass wake up - seems to take longer than GPS?
-            maxWait = 20;
-            while (Input.compass.trueHeading == 0 && maxWait > 0)
-            {
-                yield return new WaitForSeconds(1);
-                maxWait--;
-            }
-
-            initialHeading = Input.compass.trueHeading;
-
-            // Update the sun now we have position
-            UpdateSunRotation();
-
-            alignmentResult = "Success";
-
-        }
-
-        Input.location.Stop();
-        Input.compass.enabled = false;
-
-        // Convert viewer geodetic position to ECEF
-        Vector3d obsECEF = GeoUtils.LLAtoECEF(viewerLat, viewerLon, viewerAlt);
-        observerPositionECEF = new Vector3((float)obsECEF.x, (float)obsECEF.z, (float)obsECEF.y);
-
-        //origin.transform.rotation = Quaternion.Euler(new Vector3((float)viewerLat - 90f, (float)viewerLon - 90f, 0)) * Quaternion.Euler(0, -initialHeading, 0);
-        globeNormal = Vector3.Normalize(observerPositionECEF);
-
-        // Assuming the user isn't at one of the poles...
-        //eastDirection = new Vector3((float)Math.Cos(viewerLon * Mathf.Deg2Rad), 0, (float)Math.Sin(viewerLon * Mathf.Deg2Rad));
-        eastDirection = new Vector3(globeNormal.z, globeNormal.y, globeNormal.x);
-
-        northTangent = Quaternion.AngleAxis(initialHeading, globeNormal) * Vector3.Normalize(Vector3.Cross(globeNormal, eastDirection));
-        origin.transform.rotation = Quaternion.LookRotation(northTangent, globeNormal);
-
-        yield return null;
-    }
-
-    Vector3 globeNormal;
-
-    // Assuming the user isn't at one of the poles...
-    Vector3 eastDirection;
-
-    Vector3 northTangent;
-    public float gizmoLength = 2f;
-
-    private void OnDrawGizmos()
-    {
-        Gizmos.color = Color.green;
-        Gizmos.DrawLine(transform.position, transform.position + (gizmoLength * globeNormal));
-
-        Gizmos.color = Color.red;
-        Gizmos.DrawLine(transform.position, transform.position + (gizmoLength * eastDirection));
-
-        Gizmos.color = Color.blue;
-        Gizmos.DrawLine(transform.position, transform.position + (gizmoLength * northTangent));
-    }
-
-    //void OnGUI()
-    //{
-    //    //Output the rotation rate, attitude and the enabled state of the gyroscope as a Label
-    //    //GUI.Label(new Rect(10, 10, 200, 40), "Gyro rotation rate " + m_Gyro.rotationRate);
-    //    GUI.Label(new Rect(10, 60, 200, 40), $"Initial compass heading: {initialHeading}");
-    //    GUI.Label(new Rect(10, 100, 400, 80), $"Lat: {viewerLat}, Lon: {viewerLon}, Alt: {viewerAlt}");
-    //}
-
-    #endregion User Location
 
     #region Loading Satellites
 
@@ -737,7 +652,5 @@ public class SatelliteManager : MonoBehaviour, ISelectionManager
 
         return mesh;
     }
-
-
     #endregion
 }

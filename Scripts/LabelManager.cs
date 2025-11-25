@@ -7,7 +7,21 @@ public class LabelManager : MonoBehaviour
     public InfoPanel infoPanel;
     public Satellite mySatellite;
     int satIndex;
-    public SatelliteManager satManager;
+    public ISelectionManager satManager;
+    public GameObject satManagerGO;
+
+    private void Start()
+    {
+        Component[] allComponents = satManagerGO.GetComponents<Component>();
+        foreach (Component comp in allComponents)
+        {
+            if (comp is ISelectionManager manager)
+            {
+                satManager = manager;
+                break;
+            }
+        }
+    }
 
     public void SetSatellite(Satellite satellite, int index)
     {
@@ -34,6 +48,6 @@ public class LabelManager : MonoBehaviour
     {
         infoPanel.Show(this);
         transform.parent.gameObject.SetActive(false);
-        satManager.selectedIndex = satIndex;
+        satManager.SetSelection(satIndex);
     }
 }

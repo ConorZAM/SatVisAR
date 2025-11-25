@@ -8,7 +8,8 @@ public class SatelliteAPI : MonoBehaviour
 {
     public string rootUri = "http://urgently-stunning-ape.ngrok-free.app/sats?";
     string liveDataUri = "http://urgently-stunning-ape.ngrok-free.app/sats?model=live&format=cartesian";
-    public SatelliteManager satManager;
+    public SatelliteRenderer satManager;
+    //public SatelliteManager satManager;
 
     int currentYear = -1;
 

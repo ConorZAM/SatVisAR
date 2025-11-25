@@ -11,7 +11,7 @@ public class Satellite
     public Vector3 velocityITRS; // In km/s
 
     public string name;
-    public string category;
+    //public string category;
 
     [JsonProperty("launch date")]
     public DateTime launchDate;
@@ -25,13 +25,22 @@ public class Satellite
     [JsonProperty("operational status")]
     public string operationalStatus;
 
-    public string owner;
-    public string Payload;
+    [JsonProperty("orbit type")]
+    public string orbitType;
 
-    public string[] tags;
+    [JsonProperty("owner country")]
+    public string[] ownerCountry;
 
-    public double e;
-    public double i;
+    public string firstOwnerCountry = "";
+
+    public string constellation;
+
+    //public string Payload;
+
+    //public string[] tags;
+
+    //public double e;
+    //public double i;
 
     public float x, y, z;
     public float x_v, y_v, z_v;
@@ -59,6 +68,15 @@ public class Satellite
     {
         positionITRS = new Vector3(x, z, y);
         velocityITRS = new Vector3(x_v, z_v, y_v);
+
+        if (ownerCountry != null && ownerCountry.Length > 0)
+        {
+            firstOwnerCountry = ownerCountry[0];
+        }
+        else
+        {
+            firstOwnerCountry = "Unknown";
+        }
     }
 
     public void UpdatePosition(float dt)
@@ -70,7 +88,7 @@ public class Satellite
 
     public string GetInfo()
     {
-        return $"Name: {name}\nOwned by: {owner}\nCountry of launch: {launchCountry}\nLaunch date: {launchDate.ToShortDateString()}\nOperational status: {operationalStatus}\nApprox. altitude {ApproxAltitude().ToSignificantFigures(2)} km";
+        return $"Name: {name}\nOwned by: {firstOwnerCountry}\nCountry of launch: {launchCountry}\nLaunch date: {launchDate.ToShortDateString()}\nOperational status: {operationalStatus}\nOrbit type: {orbitType}\nApprox. altitude {ApproxAltitude().ToSignificantFigures(2)} km";
     }
 
     public float ApproxAltitude()
