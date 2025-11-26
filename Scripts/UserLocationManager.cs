@@ -36,6 +36,22 @@ public class UserLocationManager : MonoBehaviour
         }
     }
 
+    private void OnValidate()
+    {
+        ProcessLLH();
+    }
+
+    public Transform cam;
+    public void Update()
+    {
+        if (useDeviceLocation)
+        {
+            return;
+        }
+
+        cam.rotation = Quaternion.LookRotation(northTangent, globeNormal);
+    }
+
     void ProcessLLH()
     {
         // Convert viewer geodetic position to ECEF
