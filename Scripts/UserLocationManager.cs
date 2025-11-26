@@ -49,7 +49,7 @@ public class UserLocationManager : MonoBehaviour
             return;
         }
 
-        cam.rotation = Quaternion.LookRotation(northTangent, globeNormal);
+        cam.rotation = worldRotation;
     }
 
     void ProcessLLH()
@@ -65,7 +65,7 @@ public class UserLocationManager : MonoBehaviour
         //eastDirection = new Vector3((float)Math.Cos(viewerLon * Mathf.Deg2Rad), 0, (float)Math.Sin(viewerLon * Mathf.Deg2Rad));
         eastDirection = new Vector3(globeNormal.z, globeNormal.y, globeNormal.x);
 
-        northTangent = Quaternion.AngleAxis(initialHeading, globeNormal) * Vector3.Normalize(Vector3.Cross(globeNormal, eastDirection));
+        northTangent = Quaternion.AngleAxis(-initialHeading, globeNormal) * Vector3.Normalize(Vector3.Cross(globeNormal, eastDirection));
         //origin.transform.rotation = Quaternion.LookRotation(northTangent, globeNormal);
 
         worldRotation = Quaternion.LookRotation(northTangent, globeNormal);

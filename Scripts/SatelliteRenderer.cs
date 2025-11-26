@@ -96,13 +96,13 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     private List<Matrix4x4[]> instanceBatches = new();
 
     public Camera cam;
-    new Transform camera;
+    public Transform cameraDirection;
 
     #region Unity Functions
     void Start()
     {
         renderLayer = LayerMask.NameToLayer(renderLayerName);
-        camera = cam.transform;
+        //cameraDirection = cam.transform;
 
         Screen.sleepTimeout = SleepTimeout.NeverSleep;
         Screen.orientation = ScreenOrientation.Portrait;
@@ -129,8 +129,8 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     {
         dt = Time.fixedDeltaTime;
         //Transform cameraTransform = Camera.main.transform;
-        Quaternion rotation = camera.rotation;
-        Vector3 cameraForward = camera.forward;
+        Quaternion rotation = cameraDirection.rotation;
+        Vector3 cameraForward = cameraDirection.forward;
         for (int i = 0; i < allSatellites.Length; i++)
         {
             // Integrate orbit (not super accurate, but works for short intervals)
@@ -192,10 +192,15 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     /// </summary>
     void DoTheRest(Satellite[] satellites)
     {
-        Vector3 cameraForward = camera.forward;
+        Vector3 cameraForward = cameraDirection.forward;
         //cam.transform.rotation = rotation;
 
-        Vector3 camPos = camera.position;
+        if (!hasSelectionDirection)
+        {
+            selectionDirection = cameraForward;
+        }
+
+        Vector3 camPos = cameraDirection.position;
         cosFOV = Mathf.Cos(cullFOV * 0.5f * Mathf.Deg2Rad);
 
         List<Matrix4x4> visibleMatrices = new();
@@ -241,24 +246,25 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
             }
 
             float dot = Vector3.Dot(cameraForward, dir);
+            float selectionDot = Vector3.Dot(selectionDirection, dir);
 
             // Lazy way to filter for sats that are close to the centre of view
-            if (dot > labelCull)
+            if (selectionDot > labelCull)
             {
                 renderPos = camPos + (dir * shellDistance);
                 //mtx = Matrix4x4.TRS(renderPos, Quaternion.LookRotation(dir), Vector3.one * 0.05f);
-                mtx = Matrix4x4.TRS(renderPos, satRotations[i], Vector3.one * satelliteSize);
+                mtx = Matrix4x4.TRS(renderPos, satRotations[i], Vector3.one * satelliteSize * sizeScales[i]);
 
                 if (labelCount < numLabels)
                 {
                     // Just add the new label
                     labelledMatrices[labelCount] = mtx;
-                    labelDots[labelCount] = dot;
+                    labelDots[labelCount] = selectionDot;
                     labelIdx[labelCount] = i;
 
-                    if (dot < furthestDot)
+                    if (selectionDot < furthestDot)
                     {
-                        furthestDot = dot;
+                        furthestDot = selectionDot;
                         furthestDotIndex = labelCount;
                     }
 
@@ -267,14 +273,14 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
                 else
                 {
                     // If we have a satellite closer than our furthest label so far, replace it
-                    if (dot > furthestDot)
+                    if (selectionDot > furthestDot)
                     {
                         // Move the previous furthest over to the regular rendering list
                         visibleMatrices.Add(labelledMatrices[furthestDotIndex]);
 
                         // Replace
                         labelledMatrices[furthestDotIndex] = mtx;
-                        labelDots[furthestDotIndex] = dot;
+                        labelDots[furthestDotIndex] = selectionDot;
                         labelIdx[furthestDotIndex] = i;
 
                         // Update the furthest info
@@ -298,7 +304,7 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
             else if (dot > cosFOV)
             {
                 renderPos = camPos + (dir * shellDistance);
-                mtx = Matrix4x4.TRS(renderPos, satRotations[i], Vector3.one * satelliteSize);
+                mtx = Matrix4x4.TRS(renderPos, satRotations[i], satelliteSize * sizeScales[i] * Vector3.one);
                 visibleMatrices.Add(mtx);
             }
         }
@@ -344,15 +350,34 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
         }
     }
 
+    Vector3 selectionDirection;
+    bool hasSelectionDirection = false;
+    public void SetSelectionDirection(Vector3 direction)
+    {
+        selectionDirection = direction;
+        hasSelectionDirection = true;
+    }
+
+    public void ClearSelectionDirection()
+    {
+        hasSelectionDirection = false;
+    }
+
     /// <summary>
     /// This is actually the worst wow...
     /// </summary>
     void DoTheRest(int[] satellites)
     {
-        Vector3 cameraForward = camera.forward;
+        Vector3 cameraForward = cameraDirection.forward;
+
+        if (!hasSelectionDirection)
+        {
+            selectionDirection = cameraForward;
+        }
+
         //cam.transform.rotation = rotation;
 
-        Vector3 camPos = camera.position;
+        Vector3 camPos = cameraDirection.position;
         cosFOV = Mathf.Cos(cullFOV * 0.5f * Mathf.Deg2Rad);
 
         List<Matrix4x4> visibleMatrices = new();
@@ -399,24 +424,25 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
             }
 
             float dot = Vector3.Dot(cameraForward, dir);
+            float selectionDot = Vector3.Dot(selectionDirection, dir);
 
             // Lazy way to filter for sats that are close to the centre of view
-            if (dot > labelCull)
+            if (selectionDot > labelCull)
             {
                 renderPos = camPos + (dir * shellDistance);
                 //mtx = Matrix4x4.TRS(renderPos, Quaternion.LookRotation(dir), Vector3.one * 0.05f);
-                mtx = Matrix4x4.TRS(renderPos, satRotations[idx], Vector3.one * satelliteSize);
+                mtx = Matrix4x4.TRS(renderPos, satRotations[idx], satelliteSize * sizeScales[idx] * Vector3.one);
 
                 if (labelCount < numLabels)
                 {
                     // Just add the new label
                     labelledMatrices[labelCount] = mtx;
-                    labelDots[labelCount] = dot;
+                    labelDots[labelCount] = selectionDot;
                     labelIdx[labelCount] = idx;
 
-                    if (dot < furthestDot)
+                    if (selectionDot < furthestDot)
                     {
-                        furthestDot = dot;
+                        furthestDot = selectionDot;
                         furthestDotIndex = labelCount;
                     }
 
@@ -425,14 +451,14 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
                 else
                 {
                     // If we have a satellite closer than our furthest label so far, replace it
-                    if (dot > furthestDot)
+                    if (selectionDot > furthestDot)
                     {
                         // Move the previous furthest over to the regular rendering list
                         visibleMatrices.Add(labelledMatrices[furthestDotIndex]);
 
                         // Replace
                         labelledMatrices[furthestDotIndex] = mtx;
-                        labelDots[furthestDotIndex] = dot;
+                        labelDots[furthestDotIndex] = selectionDot;
                         labelIdx[furthestDotIndex] = idx;
 
                         // Update the furthest info
@@ -456,7 +482,7 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
             else if (dot > cosFOV)
             {
                 renderPos = camPos + (dir * shellDistance);
-                mtx = Matrix4x4.TRS(renderPos, satRotations[idx], Vector3.one * satelliteSize);
+                mtx = Matrix4x4.TRS(renderPos, satRotations[idx], satelliteSize * sizeScales[idx] * Vector3.one);
                 visibleMatrices.Add(mtx);
             }
         }
@@ -536,6 +562,13 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
 
     #region Loading Satellites
 
+    public float leoSizeScale = 1f;
+    public float meoSizeScale = 0.7f;
+    public float geoSizeScale = 0.5f;
+    public float heoSizeScale = 0.3f;
+    public float undefinedOrbitTypeSizeScale = 1f;
+    float[] sizeScales;
+
     public FilterManager filterManager;
     public void UpdateSatellites(Satellite[] satellites)
     {
@@ -545,12 +578,22 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
         directions = new Vector3[satellites.Length];
         satRotations = new Quaternion[satellites.Length];
         satRotationOffsets = new float[satellites.Length];
+        sizeScales = new float[satellites.Length];
 
         // Initialize currentPositions with initial positions
         for (int i = 0; i < satellites.Length; i++)
         {
             satellites[i].Initialise();
             currentPositions[i] = satellites[i].positionITRS;
+
+            sizeScales[i] = satellites[i].orbitType switch
+            {
+                "LEO" => leoSizeScale,
+                "MEO" => meoSizeScale,
+                "GEO" => geoSizeScale,
+                "HEO" => heoSizeScale,
+                _ => undefinedOrbitTypeSizeScale,
+            };
             satRotationOffsets[i] = UnityEngine.Random.Range(-180f, 180f);
         }
 
