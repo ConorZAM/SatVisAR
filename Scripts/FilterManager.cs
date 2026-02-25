@@ -8,9 +8,17 @@ public class FilterManager : MonoBehaviour
     public TMP_Dropdown ownerCountryDropdown;
     public TMP_Dropdown constellationDropdown;
 
-    public TMP_Text numSatellites;
+    public TMP_Text[] numSatellites;
 
     public SatelliteRenderer satelliteRenderer;
+
+    void UpdateNumSatellites(int number)
+    {
+        for (int i = 0; i < numSatellites.Length; i++)
+        {
+            numSatellites[i].text = $"Found {number} satellites";
+        }
+    }
 
     public void ApplyFilters()
     {
@@ -20,8 +28,8 @@ public class FilterManager : MonoBehaviour
 
         if (orbitType == "All" && owner == "All" && constellation == "All")
         {
-            satelliteRenderer.filteredSatellites = new int[0];
-            numSatellites.text = $"Found {satelliteRenderer.allSatellites.Length} satellites";
+            satelliteRenderer.filteredSatellites = new Satellite[0];
+            UpdateNumSatellites(satelliteRenderer.allSatellites.Length);
             return;
         }
 
@@ -36,13 +44,11 @@ public class FilterManager : MonoBehaviour
                 && FiltersMatch(satellite.firstOwnerCountry, owner)
                 && FiltersMatch(satellite.constellation, constellation))
             {
-                filtered.Add(i);
+                filtered.Add(satellite);
             }
         }
 
-        numSatellites.text = $"Found {filtered.Count} satellites";
-        //Debug.Log(numSatellites.text);
-
+        UpdateNumSatellites(filtered.Count);
         satelliteRenderer.filteredSatellites = filtered.ToArray();
     }
 
@@ -104,7 +110,7 @@ public class FilterManager : MonoBehaviour
         constellationDropdown.ClearOptions();
         constellationDropdown.AddOptions(constellations);
 
-        numSatellites.text = $"Found {satellites.Length} satellites";
+        UpdateNumSatellites(satellites.Length);
 
     }
 }

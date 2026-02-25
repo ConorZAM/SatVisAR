@@ -17,7 +17,7 @@ public class UserLocationManager : MonoBehaviour
     public float desiredAccuracyInMeters = 10f;
     public float updateDistanceInMeters = 10f;
 
-    public bool useDeviceLocation = true;
+    public bool skipLocationServiceForTesting = false;
 
     private void Start()
     {
@@ -26,33 +26,41 @@ public class UserLocationManager : MonoBehaviour
 
     public void UpdateOrientation()
     {
-        if (useDeviceLocation)
-        {
-            StartCoroutine(AlignView());
-        }
-        else
-        {
-            ProcessLLH();
-        }
-    }
 
-    private void OnValidate()
-    {
-        ProcessLLH();
+        // Calling this here in case the align view fails to pick up any sensors and returns early
+        UpdateWorldRotation();
+
+        if (skipLocationServiceForTesting)
+        {
+            alignmentResult = "Skipped for testing";
+            return;
+        }
+
+        StartCoroutine(AlignView());
     }
 
     public Transform cam;
     public void Update()
     {
-        if (useDeviceLocation)
+        if (skipLocationServiceForTesting)
         {
-            return;
+            cam.rotation = worldRotation;
         }
 
-        cam.rotation = worldRotation;
     }
 
-    void ProcessLLH()
+    private void OnValidate()
+    {
+        UpdateWorldRotation();
+    }
+
+    public void SetManualHeading(float heading)
+    {
+        initialHeading = heading;
+        UpdateWorldRotation();
+    }
+
+    public void UpdateWorldRotation()
     {
         // Convert viewer geodetic position to ECEF
         Vector3d obsECEF = GeoUtils.LLAtoECEF(userLat, userLon, userAlt);
@@ -63,15 +71,39 @@ public class UserLocationManager : MonoBehaviour
 
         // Assuming the user isn't at one of the poles...
         //eastDirection = new Vector3((float)Math.Cos(viewerLon * Mathf.Deg2Rad), 0, (float)Math.Sin(viewerLon * Mathf.Deg2Rad));
-        eastDirection = new Vector3(globeNormal.z, globeNormal.y, globeNormal.x);
+        eastDirection = Vector3.Normalize(new Vector3(globeNormal.z, globeNormal.y, globeNormal.x));
 
-        northTangent = Quaternion.AngleAxis(-initialHeading, globeNormal) * Vector3.Normalize(Vector3.Cross(globeNormal, eastDirection));
+        northTangent = Quaternion.AngleAxis(-initialHeading, globeNormal).normalized * Vector3.Normalize(Vector3.Cross(globeNormal, eastDirection));
         //origin.transform.rotation = Quaternion.LookRotation(northTangent, globeNormal);
 
         worldRotation = Quaternion.LookRotation(northTangent, globeNormal);
-
-        //Camera.main.transform.LookAt(Camera.main.transform.position + (10f * northTangent), globeNormal);
     }
+
+    //void UpdateWorldRotation()
+    //{
+    //    // Convert viewer geodetic position to ECEF
+    //    Vector3d obsECEF = GeoUtils.LLAtoECEF(userLat, userLon, userAlt);
+    //    userPositionECEF = new Vector3((float)obsECEF.x, (float)obsECEF.z, (float)obsECEF.y);
+
+    //    globeNormal = Vector3.Normalize(userPositionECEF);
+
+    //    float latRad = userLat * Mathf.Deg2Rad;
+    //    float lonRad = userLon * Mathf.Deg2Rad;
+
+    //    // ECEF -> Unity axis swap: (x, y, z) = (X, Z, Y)
+    //    Vector3 east = new Vector3(-Mathf.Sin(lonRad), 0f, Mathf.Cos(lonRad));
+    //    Vector3 north = new Vector3(
+    //        -Mathf.Sin(latRad) * Mathf.Cos(lonRad),
+    //        Mathf.Cos(latRad),
+    //        -Mathf.Sin(latRad) * Mathf.Sin(lonRad));
+
+    //    eastDirection = east.normalized;
+
+    //    // Apply heading (clockwise from north) around local up
+    //    northTangent = (Quaternion.AngleAxis(-initialHeading, globeNormal) * north).normalized;
+
+    //    worldRotation = Quaternion.LookRotation(northTangent, globeNormal);
+    //}
 
     IEnumerator AlignView()
     {
@@ -149,7 +181,7 @@ public class UserLocationManager : MonoBehaviour
         Input.location.Stop();
         Input.compass.enabled = false;
 
-        ProcessLLH();
+        UpdateWorldRotation();
 
         yield return null;
     }

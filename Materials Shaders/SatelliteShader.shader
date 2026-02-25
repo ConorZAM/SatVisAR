@@ -9,8 +9,9 @@ Shader "Custom/SatelliteShader"
 
     SubShader
     {
-        Tags { "RenderPipeline" = "UniversalRenderPipeline" "RenderType"="TransparentCutout" "Queue"="AlphaTest" }
+        Tags { "RenderPipeline" = "UniversalPipeline" "RenderType"="TransparentCutout" "Queue"="AlphaTest" }
         LOD 100
+
         Pass
         {
             Name "ForwardLit"
@@ -27,7 +28,12 @@ Shader "Custom/SatelliteShader"
 
             TEXTURE2D(_BaseMap);
             SAMPLER(sampler_BaseMap);
-            float _Cutoff;
+
+            // Required for SRP Batcher compatibility on mobile
+            CBUFFER_START(UnityPerMaterial)
+                float4 _BaseMap_ST;
+                float  _Cutoff;
+            CBUFFER_END
 
             UNITY_INSTANCING_BUFFER_START(Props)
                 UNITY_DEFINE_INSTANCED_PROP(float4, _BaseColor)
@@ -44,22 +50,22 @@ Shader "Custom/SatelliteShader"
             {
                 float4 positionHCS : SV_POSITION;
                 float2 uv          : TEXCOORD0;
-                float4 color       : COLOR0;
+                float4 color       : TEXCOORD1;   // COLOR0 unreliable on mobile
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
-            Varyings vert (Attributes v)
+            Varyings vert(Attributes v)
             {
                 UNITY_SETUP_INSTANCE_ID(v);
                 Varyings o;
                 UNITY_TRANSFER_INSTANCE_ID(v, o);
                 o.positionHCS = TransformObjectToHClip(v.positionOS.xyz);
-                o.uv = v.uv;
-                o.color = UNITY_ACCESS_INSTANCED_PROP(Props, _BaseColor);
+                o.uv          = TRANSFORM_TEX(v.uv, _BaseMap);
+                o.color       = UNITY_ACCESS_INSTANCED_PROP(Props, _BaseColor);
                 return o;
             }
 
-            half4 frag (Varyings i) : SV_Target
+            half4 frag(Varyings i) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 float4 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv) * i.color;
@@ -68,10 +74,9 @@ Shader "Custom/SatelliteShader"
                 clip(albedo.a - _Cutoff);
                 #endif
 
-                return albedo;
+                return half4(albedo);
             }
             ENDHLSL
         }
     }
-    FallBack Off
 }

@@ -6,11 +6,9 @@ using UnityEngine.Networking;
 
 public class SatelliteAPI : MonoBehaviour
 {
-    public string rootUri = "http://urgently-stunning-ape.ngrok-free.app/sats?";
-    string liveDataUri = "http://urgently-stunning-ape.ngrok-free.app/sats?model=live&format=cartesian";
+    public string rootUri;
     public SatelliteRenderer satManager;
     public FutureSatellitesManager futureSatellitesManager;
-    //public SatelliteManager satManager;
 
     [System.Serializable]
     public class SatelliteOptions

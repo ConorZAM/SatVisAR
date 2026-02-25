@@ -6,7 +6,7 @@ public class SensorAlignment : MonoBehaviour
     public UserLocationManager userLocationManager;
     //AttitudeSensor rotationVector;
     public float initialBeta = 0.2f;
-    public float settleTime = 2f;
+    public float settleTime = 10f;
     public float beta = 0.02f;
     MadgwickAHRS filter = new MadgwickAHRS();
 
@@ -38,66 +38,8 @@ public class SensorAlignment : MonoBehaviour
         filter.Beta = initialBeta;
         Invoke(nameof(SetBeta), settleTime);
 
-        if (acc != null)
-        {
-            Vector3 a = acc.acceleration.ReadValue();
-            filter.Quaternion = rotationFix * Quaternion.LookRotation(a);
-        }
-
-        //AttitudeSensor rotationVector = AndroidGameRotationVector.current;// AndroidRotationVector.current;
-        //if (rotationVector != null)
-        //{
-        //    InputSystem.EnableDevice(rotationVector);
-
-        //    // Read Android orientation one time
-        //    Quaternion android = rotationVector.attitude.ReadValue();
-
-        //    // Convert to Unity coordinates (same as earlier)
-        //    Quaternion unity = new Quaternion(android.x, android.y, -android.z, -android.w);
-        //    unity = Quaternion.Euler(-90, 0, 0) * unity;
-
-        //    // Warm start Madgwick
-        //    filter.Quaternion = android;
-        //}
-        //else if (acc != null)
-        //{
-        //    Vector3 a = acc.acceleration.ReadValue();
-
-        //    // Tilt from gravity
-        //    Vector3 forward = Vector3.ProjectOnPlane(Vector3.forward, a).normalized;
-        //    Vector3 up = -a.normalized;
-
-        //    Quaternion tilt = Quaternion.LookRotation(forward, up);
-
-        //    // Zero yaw or choose your own heading
-        //    Vector3 e = tilt.eulerAngles;
-        //    e.y = 0f;
-
-        //    filter.Quaternion = Quaternion.Euler(e);
-        //}
+        TryWarmStart();
     }
-
-    //Vector3 DeviceForwardDirection()
-    //{
-    //    if (rotationVector == null)
-    //    {
-    //        return Vector3.forward;
-    //    }
-
-    //    Quaternion rotation = rotationVector.attitude.ReadValue(); // cameraTransform.rotation;
-    //    return rotation * new Vector3(0, 0, 1);
-    //}
-
-    //(Quaternion, Vector3) DeviceOrientationAndDirection()
-    //{
-    //    if (rotationVector == null)
-    //    {
-    //        return (Quaternion.identity, Vector3.forward);
-    //    }
-
-    //    Quaternion rotation = ConvertAndroidToUnity(rotationVector.attitude.ReadValue()); // cameraTransform.rotation;
-    //    return (rotation, rotation * new Vector3(0, 0, 1));
-    //}
 
     Quaternion ConvertAndroidToUnity(Quaternion q)
     {
@@ -109,8 +51,46 @@ public class SensorAlignment : MonoBehaviour
         return rotationFix * androidToUnity;
     }
 
-    //public float smooth = 10;
-    //Quaternion smoothedRotation = Quaternion.identity;
+    Vector3 ConvertAndroidToUnity(Vector3 v)
+    {
+        Vector3 androidToUnity = new Vector3(v.x, v.y, -v.z);
+        return rotationFix * androidToUnity;
+    }
+
+    Quaternion ConvertUnityToAndroid(Quaternion q)
+    {
+        Quaternion unityToAndroid = Quaternion.Inverse(rotationFix) * q;
+        return new Quaternion(unityToAndroid.x, unityToAndroid.y, -unityToAndroid.z, -unityToAndroid.w);
+    }
+
+    void TryWarmStart()
+    {
+        if (acc == null)
+        {
+            return;
+        }
+
+        Vector3 a = ConvertAndroidToUnity(acc.acceleration.ReadValue());
+        if (a.sqrMagnitude < 0.0001f)
+        {
+            return;
+        }
+
+        Vector3 up = -a.normalized;
+
+        Vector3 referenceForward = userLocationManager != null
+            ? userLocationManager.worldRotation * Vector3.forward
+            : Vector3.forward;
+
+        Vector3 forward = Vector3.ProjectOnPlane(referenceForward, up);
+        if (forward.sqrMagnitude < 0.0001f)
+        {
+            forward = Vector3.ProjectOnPlane(Vector3.forward, up);
+        }
+
+        Quaternion deviceToWorld = Quaternion.LookRotation(forward.normalized, up);
+        filter.Quaternion = ConvertUnityToAndroid(deviceToWorld);
+    }
 
     // Update is called once per frame
     void Update()
