@@ -31,6 +31,12 @@ public class Satellite
     [JsonProperty("owner country")]
     public string[] ownerCountry;
 
+    [JsonProperty("avg flux debris density")]
+    public float avgFluxDebrisDensity;
+
+    [JsonProperty("max flux debris density")]
+    public float maxFluxDebrisDensity;
+
     public string firstOwnerCountry = "";
 
     public string constellation;

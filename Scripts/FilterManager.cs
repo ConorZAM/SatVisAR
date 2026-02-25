@@ -21,6 +21,7 @@ public class FilterManager : MonoBehaviour
         if (orbitType == "All" && owner == "All" && constellation == "All")
         {
             satelliteRenderer.filteredSatellites = new int[0];
+            numSatellites.text = $"Found {satelliteRenderer.allSatellites.Length} satellites";
             return;
         }
 

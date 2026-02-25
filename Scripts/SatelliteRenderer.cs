@@ -54,7 +54,6 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     public float satelliteSize = 0.05f;
     public string renderLayerName;
     int renderLayer;
-    const int batchSize = 1023;
 
     public UserLocationManager userLocationManager;
 
@@ -88,6 +87,19 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     public bool hideBelowHorizon = false;
 
     public int numLabels = 5;
+
+    const int batchSize = 1023;
+    int BaseColorId; // use "_Color" if your shader uses that name
+    readonly Matrix4x4[] matrixBatch = new Matrix4x4[batchSize];
+    readonly Vector4[] colorBatch = new Vector4[batchSize];
+    readonly List<Vector4> colorList = new List<Vector4>(batchSize);
+    MaterialPropertyBlock instancingBlock;
+
+    private void Awake()
+    {
+        instancingBlock = new MaterialPropertyBlock();
+        BaseColorId = Shader.PropertyToID("_BaseColor");
+    }
 
     [Tooltip("The label prefab which is created in the UI. numLabels determines how many of these are created at runtime.")]
     public GameObject labelGameObject;
@@ -171,14 +183,16 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
 
         //Quaternion rotation = camera.rotation;
 
-        if (filteredSatellites.Length > 0)
-        {
-            DoTheRest(filteredSatellites);
-        }
-        else
-        {
-            DoTheRest(allSatellites);
-        }
+        DoTheRest(allSatellites);
+
+        //if (filteredSatellites.Length > 0)
+        //{
+        //    DoTheRest(filteredSatellites);
+        //}
+        //else
+        //{
+        //    DoTheRest(allSatellites);
+        //}
 
         // Next step here is to get satellites within a really small fov and label them
         // If we can get n satellites closest to a dot product of 1 then we're onto a winner
@@ -187,26 +201,37 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
 
     }
 
-    /// <summary>
-    /// This is actually the worst wow...
-    /// </summary>
-    void DoTheRest(Satellite[] satellites)
+    struct SatelliteMatrix
     {
-        Vector3 cameraForward = cameraDirection.forward;
-        //cam.transform.rotation = rotation;
+        public Matrix4x4 matrix;
+        public float dot;
+        public int index;
+        public Color colour;
+    }
 
-        if (!hasSelectionDirection)
+    public Material[] collisionMaterials;
+    public float[] collisionThresholds = new float[] { 1, 1e-2f, 1e-4f, 1e-6f };
+
+    List<SatelliteMatrix> visibleSatellites = new();
+    SatelliteMatrix[] labelledSatellites;
+
+    /// <summary>
+    /// World space positions of satellites
+    /// </summary>
+    private Matrix4x4[] labelledMatricesBuffer;
+    private int labelledSatelliteCount;
+
+    List<SatelliteMatrix> GetSatelliteMatrices(Satellite[] satellites)
+    {
+        visibleSatellites.Clear();
+
+        if (labelledSatellites == null || labelledSatellites.Length != numLabels)
         {
-            selectionDirection = cameraForward;
+            labelledSatellites = new SatelliteMatrix[numLabels];
         }
 
+        Vector3 cameraForward = cameraDirection.forward;
         Vector3 camPos = cameraDirection.position;
-        cosFOV = Mathf.Cos(cullFOV * 0.5f * Mathf.Deg2Rad);
-
-        List<Matrix4x4> visibleMatrices = new();
-
-        // New info for labelling
-        Matrix4x4[] labelledMatrices = new Matrix4x4[numLabels];
         labelDots = new float[numLabels];
         labelIdx = new int[numLabels];
         for (int i = 0; i < numLabels; i++)
@@ -219,28 +244,10 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
         int furthestDotIndex = 0;
         int labelCount = 0;
 
-        Vector3 renderPos;
-        Vector3 userPositionECEF = userLocationManager.userPositionECEF;
-        Matrix4x4 mtx;
-
         for (int i = 0; i < satellites.Length; i++)
         {
             Vector3 dir = directions[i];
-
-            /* Sorting the satellites based on nearest to the camera direction
-             * I think we can have an array of nearestMatrices and an array of their dot product results
-             * If we get a satellite which is closer, then we pop out the furthest satellite from the nearestMatrices array and add it
-             * to the visibleMatrices array.
-             * 
-             * The potential issue here is that we might be searching the array of labelled satellites a lot unecessarily..
-             */
-
-            if (hideBelowHorizon && Vector3.Dot(dir, userPositionECEF) < 0)
-            {
-                continue;
-            }
-
-            if (i == selectedIndex)
+            if (hideBelowHorizon && Vector3.Dot(dir, userLocationManager.userPositionECEF) < 0)
             {
                 continue;
             }
@@ -248,17 +255,20 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
             float dot = Vector3.Dot(cameraForward, dir);
             float selectionDot = Vector3.Dot(selectionDirection, dir);
 
-            // Lazy way to filter for sats that are close to the centre of view
-            if (selectionDot > labelCull)
+            if (dot > cosFOV)
             {
-                renderPos = camPos + (dir * shellDistance);
-                //mtx = Matrix4x4.TRS(renderPos, Quaternion.LookRotation(dir), Vector3.one * 0.05f);
-                mtx = Matrix4x4.TRS(renderPos, satRotations[i], Vector3.one * satelliteSize * sizeScales[i]);
+                SatelliteMatrix mtx = new SatelliteMatrix
+                {
+                    matrix = Matrix4x4.TRS(camPos + (dir * shellDistance), satRotations[i], satelliteSize * sizeScales[i] * Vector3.one),
+                    dot = dot,
+                    index = i,
+                    colour = Color.white //GetSatelliteColour(satellites[i])
+                };
 
                 if (labelCount < numLabels)
                 {
                     // Just add the new label
-                    labelledMatrices[labelCount] = mtx;
+                    labelledSatellites[labelCount] = mtx;
                     labelDots[labelCount] = selectionDot;
                     labelIdx[labelCount] = i;
 
@@ -276,10 +286,10 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
                     if (selectionDot > furthestDot)
                     {
                         // Move the previous furthest over to the regular rendering list
-                        visibleMatrices.Add(labelledMatrices[furthestDotIndex]);
+                        visibleSatellites.Add(labelledSatellites[furthestDotIndex]);
 
                         // Replace
-                        labelledMatrices[furthestDotIndex] = mtx;
+                        labelledSatellites[furthestDotIndex] = mtx;
                         labelDots[furthestDotIndex] = selectionDot;
                         labelIdx[furthestDotIndex] = i;
 
@@ -296,42 +306,96 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
                     }
                     else
                     {
-                        visibleMatrices.Add(mtx);
+                        visibleSatellites.Add(mtx);
                     }
                 }
             }
-            // Just need to check if the satellite is within the camera's FOV
-            else if (dot > cosFOV)
+        }
+
+        labelledSatelliteCount = labelCount;
+        return visibleSatellites;
+    }
+
+    public float minFluxDebrisDensity = 6.779351e-06f;
+    public float midFluxDebrisDensity = 0.5f * (6.779351e-06f + 0.0001862074f);
+    public float maxFluxDebrisDensity = 0.0001862074f;
+    Color GetSatelliteColour(Satellite satellite)
+    {
+        // This would be ideal but it doesn't seem to give much difference
+        float t = Mathf.InverseLerp(minFluxDebrisDensity, maxFluxDebrisDensity, satellite.maxFluxDebrisDensity);
+        return Color.Lerp(Color.blue, Color.red, t);
+    }
+
+
+    /// <summary>
+    /// This is actually the worst wow...
+    /// </summary>
+    void DoTheRest(Satellite[] satellites)
+    {
+        Vector3 cameraForward = cameraDirection.forward;
+        //cam.transform.rotation = rotation;
+
+        if (!hasSelectionDirection)
+        {
+            selectionDirection = cameraForward;
+        }
+
+        Vector3 camPos = cameraDirection.position;
+        cosFOV = Mathf.Cos(cullFOV * 0.5f * Mathf.Deg2Rad);
+
+        GetSatelliteMatrices(satellites);
+
+        // Batch draw calls with per-instance color
+        for (int i = 0; i < visibleSatellites.Count; i += batchSize)
+        {
+            int count = Mathf.Min(batchSize, visibleSatellites.Count - i);
+            colorList.Clear();
+            for (int j = 0; j < count; j++)
             {
-                renderPos = camPos + (dir * shellDistance);
-                mtx = Matrix4x4.TRS(renderPos, satRotations[i], satelliteSize * sizeScales[i] * Vector3.one);
-                visibleMatrices.Add(mtx);
+                SatelliteMatrix sat = visibleSatellites[i + j];
+                matrixBatch[j] = sat.matrix;
+                colorBatch[j] = sat.colour;
+                colorList.Add(colorBatch[j]);
             }
-        }
 
-        // Batch draw calls
-        instanceBatches.Clear();
-        for (int i = 0; i < visibleMatrices.Count; i += batchSize)
-        {
-            int count = Mathf.Min(batchSize, visibleMatrices.Count - i);
-            instanceBatches.Add(visibleMatrices.GetRange(i, count).ToArray());
-        }
+            instancingBlock.Clear();
+            instancingBlock.SetVectorArray(BaseColorId, colorList);
 
-        foreach (Matrix4x4[] batch in instanceBatches)
-        {
-            //Graphics.DrawMeshInstanced(rp, quadMesh, 0, batch);
-            Graphics.DrawMeshInstanced(quadMesh, 0, satelliteMaterial, batch, batch.Length, null, UnityEngine.Rendering.ShadowCastingMode.Off, false, renderLayer);
+            Graphics.DrawMeshInstanced(
+                quadMesh, 0, satelliteMaterial,
+                matrixBatch, count, instancingBlock,
+                UnityEngine.Rendering.ShadowCastingMode.Off, false, renderLayer);
         }
 
         // Draw the labelled satellites!
-        Graphics.DrawMeshInstanced(quadMesh, 0, labelledSatelliteMaterial, labelledMatrices, labelledMatrices.Length, null, UnityEngine.Rendering.ShadowCastingMode.Off, false, renderLayer);
+        if (labelledSatelliteCount > 0)
+        {
+            if (labelledMatricesBuffer == null || labelledMatricesBuffer.Length != numLabels)
+            {
+                labelledMatricesBuffer = new Matrix4x4[numLabels];
+            }
+
+            for (int i = 0; i < labelledSatelliteCount; i++)
+            {
+                labelledMatricesBuffer[i] = labelledSatellites[i].matrix;
+            }
+
+            Graphics.DrawMeshInstanced(
+                quadMesh,
+                0,
+                labelledSatelliteMaterial,
+                labelledMatricesBuffer,
+                labelledSatelliteCount,
+                null,
+                UnityEngine.Rendering.ShadowCastingMode.Off,
+                false,
+                renderLayer);
+        }
 
         // Draw the selected satellite
         if (selectedIndex > 0)
         {
-            renderPos = camPos + (directions[selectedIndex] * shellDistance);
-            mtx = Matrix4x4.TRS(renderPos, satRotations[selectedIndex], Vector3.one * satelliteSize);
-            Graphics.DrawMesh(quadMesh, mtx, selectedSatelliteMaterial, renderLayer);
+            Graphics.DrawMesh(quadMesh, Matrix4x4.TRS(camPos + (directions[selectedIndex] * shellDistance), satRotations[selectedIndex], Vector3.one * satelliteSize), selectedSatelliteMaterial, renderLayer);
         }
 
         // Update the labels
@@ -580,11 +644,32 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
         satRotationOffsets = new float[satellites.Length];
         sizeScales = new float[satellites.Length];
 
+        float minFluxDensity = float.MaxValue;
+        float maxFluxDensity = float.MinValue;
+
         // Initialize currentPositions with initial positions
         for (int i = 0; i < satellites.Length; i++)
         {
             satellites[i].Initialise();
             currentPositions[i] = satellites[i].positionITRS;
+
+            // If the satellite doesn't have an orbit type we should infer the type from the altitude and update the orbit type property
+            if (satellites[i].orbitType != "LEO" && satellites[i].orbitType != "MEO" && satellites[i].orbitType != "GEO" && satellites[i].orbitType != "HEO")
+            {
+                float altitude = satellites[i].ApproxAltitude();
+                if (altitude < 2000)
+                {
+                    satellites[i].orbitType = "LEO";
+                }
+                else if (altitude < 35786 + 2000)
+                {
+                    satellites[i].orbitType = "MEO";
+                }
+                else
+                {
+                    satellites[i].orbitType = "GEO";
+                }
+            }
 
             sizeScales[i] = satellites[i].orbitType switch
             {
@@ -595,7 +680,12 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
                 _ => undefinedOrbitTypeSizeScale,
             };
             satRotationOffsets[i] = UnityEngine.Random.Range(-180f, 180f);
+
+            minFluxDensity = Mathf.Min(minFluxDensity, satellites[i].maxFluxDebrisDensity);
+            maxFluxDensity = Mathf.Max(maxFluxDensity, satellites[i].maxFluxDebrisDensity);
         }
+
+        Debug.Log($"Min flux density: {minFluxDensity}, Max flux density: {maxFluxDensity}");
 
         filterManager.UpdateFilterOptions(allSatellites);
 
