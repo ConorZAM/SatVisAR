@@ -220,6 +220,9 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     private Matrix4x4[] labelledMatricesBuffer;
     private int labelledSatelliteCount;
 
+
+    Vector3 cameraForward;
+    Vector3 camPos;
     List<SatelliteMatrix> GetSatelliteMatrices(Satellite[] satellites)
     {
         visibleSatellites.Clear();
@@ -229,8 +232,7 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
             labelledSatellites = new SatelliteMatrix[numLabels];
         }
 
-        Vector3 cameraForward = cameraDirection.forward;
-        Vector3 camPos = cameraDirection.position;
+        
         labelDots = new float[numLabels];
         labelIdx = new int[numLabels];
         for (int i = 0; i < numLabels; i++)

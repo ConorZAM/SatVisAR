@@ -27,7 +27,7 @@ public class FilterManager : MonoBehaviour
 
         Debug.Log($"Filtering for orbit type: {orbitType}, owner: {owner}, and constellation {constellation}");
 
-        List<int> filtered = new List<int>();
+        List<Satellite> filtered = new List<Satellite>();
         Satellite[] allSatellites = satelliteRenderer.allSatellites;
         for (int i = 0; i < allSatellites.Length; i++)
         {

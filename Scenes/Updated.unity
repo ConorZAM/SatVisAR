@@ -8142,7 +8142,7 @@ MonoBehaviour:
   renderLayerName: Satellites
   userLocationManager: {fileID: 1117525871}
   shellDistance: 10
-  cullFOV: 120
+  cullFOV: 90
   labelCull: 0.97
   selectedIndex: -1
   hideBelowHorizon: 1
