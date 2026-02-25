@@ -17,7 +17,7 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     // However, it is faster to cache frequently used data so we don't have to access satellite instances during the rendering
     public Satellite[] allSatellites = new Satellite[0];
 
-    public int[] filteredSatellites = new int[0];
+    public Satellite[] filteredSatellites = new Satellite[0];
 
     /// <summary>
     /// World space positions of satellites
@@ -183,16 +183,15 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
 
         //Quaternion rotation = camera.rotation;
 
-        DoTheRest(allSatellites);
 
-        //if (filteredSatellites.Length > 0)
-        //{
-        //    DoTheRest(filteredSatellites);
-        //}
-        //else
-        //{
-        //    DoTheRest(allSatellites);
-        //}
+        if (filteredSatellites.Length > 0)
+        {
+            RenderSatellites(filteredSatellites);
+        }
+        else
+        {
+            RenderSatellites(allSatellites);
+        }
 
         // Next step here is to get satellites within a really small fov and label them
         // If we can get n satellites closest to a dot product of 1 then we're onto a winner
@@ -330,7 +329,7 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     /// <summary>
     /// This is actually the worst wow...
     /// </summary>
-    void DoTheRest(Satellite[] satellites)
+    void RenderSatellites(Satellite[] satellites)
     {
         Vector3 cameraForward = cameraDirection.forward;
         //cam.transform.rotation = rotation;
