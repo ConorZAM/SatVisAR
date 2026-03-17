@@ -28,14 +28,14 @@ public class FilterManager : MonoBehaviour
 
         if (orbitType == "All" && owner == "All" && constellation == "All")
         {
-            satelliteRenderer.filteredSatellites = new Satellite[0];
+            satelliteRenderer.filteredSatelliteIndices = new int[0];
             UpdateNumSatellites(satelliteRenderer.allSatellites.Length);
             return;
         }
 
         Debug.Log($"Filtering for orbit type: {orbitType}, owner: {owner}, and constellation {constellation}");
 
-        List<Satellite> filtered = new List<Satellite>();
+        List<int> filteredIndices = new List<int>();
         Satellite[] allSatellites = satelliteRenderer.allSatellites;
         for (int i = 0; i < allSatellites.Length; i++)
         {
@@ -44,12 +44,12 @@ public class FilterManager : MonoBehaviour
                 && FiltersMatch(satellite.firstOwnerCountry, owner)
                 && FiltersMatch(satellite.constellation, constellation))
             {
-                filtered.Add(satellite);
+                filteredIndices.Add(i);
             }
         }
 
-        UpdateNumSatellites(filtered.Count);
-        satelliteRenderer.filteredSatellites = filtered.ToArray();
+        UpdateNumSatellites(filteredIndices.Count);
+        satelliteRenderer.filteredSatelliteIndices = filteredIndices.ToArray();
     }
 
     bool FiltersMatch(string value, string filter)

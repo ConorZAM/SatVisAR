@@ -17,7 +17,7 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     // Satellites contain a lot of information, including their positions.
     // However, it is faster to cache frequently used data so we don't have to access satellite instances during the rendering
     public Satellite[] allSatellites = new Satellite[0];
-    public Satellite[] filteredSatellites = new Satellite[0];
+    public int[] filteredSatelliteIndices = new int[0];
 
     /// <summary>
     /// World space positions of satellites
@@ -192,13 +192,13 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
         cameraForward = cameraDirection.forward;
         camPos = cameraDirection.position;
 
-        if (filteredSatellites.Length > 0)
+        if (filteredSatelliteIndices.Length > 0)
         {
-            RenderSatellites(filteredSatellites);
+            RenderSatellites(filteredSatelliteIndices);
         }
         else
         {
-            RenderSatellites(allSatellites);
+            RenderSatellites(null);
         }
 
         // Next step here is to get satellites within a really small fov and label them
@@ -298,7 +298,7 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
 
     Vector3 cameraForward;
     Vector3 camPos;
-    List<SatelliteMatrix> GetSatelliteMatrices(Satellite[] satellites)
+    List<SatelliteMatrix> GetSatelliteMatrices(int[] indices)
     {
         cosFOV = Mathf.Cos(cullFOV * 0.5f * Mathf.Deg2Rad);
 
@@ -309,21 +309,24 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
             labelledSatellites = new SatelliteMatrix[numLabels];
         }
 
-
         labelDots = new float[numLabels];
         labelIdx = new int[numLabels];
-        for (int i = 0; i < numLabels; i++)
+        for (int j = 0; j < numLabels; j++)
         {
-            labelDots[i] = 1;
-            labelIdx[i] = -1;
+            labelDots[j] = 1;
+            labelIdx[j] = -1;
         }
 
         float furthestDot = 0;
         int furthestDotIndex = 0;
         int labelCount = 0;
 
-        for (int i = 0; i < satellites.Length; i++)
+        int totalCount = indices != null ? indices.Length : allSatellites.Length;
+
+        for (int j = 0; j < totalCount; j++)
         {
+            int i = indices != null ? indices[j] : j;
+
             Vector3 dir = directions[i];
 
             float fovDot = Vector3.Dot(cameraForward, dir);
@@ -331,7 +334,6 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
             {
                 continue;
             }
-
 
             if (hideBelowHorizon && Vector3.Dot(dir, userLocationManager.userPositionECEF) < 0)
             {
@@ -345,12 +347,11 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
                 matrix = Matrix4x4.TRS(camPos + (dir * shellDistance), satRotations[i], satelliteSize * sizeScales[i] * Vector3.one),
                 dot = fovDot,
                 index = i,
-                colour = colorProvider(satellites[i])
+                colour = colorProvider(allSatellites[i])
             };
 
             if (labelCount < numLabels)
             {
-                // Just add the new label
                 labelledSatellites[labelCount] = mtx;
                 labelDots[labelCount] = selectionDot;
                 labelIdx[labelCount] = i;
@@ -365,18 +366,14 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
             }
             else
             {
-                // If we have a satellite closer than our furthest label so far, replace it
                 if (selectionDot > furthestDot)
                 {
-                    // Move the previous furthest over to the regular rendering list
                     visibleSatellites.Add(labelledSatellites[furthestDotIndex]);
 
-                    // Replace
                     labelledSatellites[furthestDotIndex] = mtx;
                     labelDots[furthestDotIndex] = selectionDot;
                     labelIdx[furthestDotIndex] = i;
 
-                    // Update the furthest info
                     furthestDot = 1f;
                     for (int l = 0; l < labelCount; l++)
                     {
@@ -392,7 +389,6 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
                     visibleSatellites.Add(mtx);
                 }
             }
-
         }
 
         labelledSatelliteCount = labelCount;
@@ -407,16 +403,14 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     }
 
 
-    void RenderSatellites(Satellite[] satellites)
+    void RenderSatellites(int[] indices)
     {
-
         if (!hasSelectionDirection)
         {
             selectionDirection = cameraForward;
         }
 
-
-        GetSatelliteMatrices(satellites);
+        GetSatelliteMatrices(indices);
 
         // Batch draw calls with per-instance color
         for (int i = 0; i < visibleSatellites.Count; i += batchSize)
@@ -440,7 +434,6 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
                 UnityEngine.Rendering.ShadowCastingMode.Off, false, renderLayer);
         }
 
-        // Draw the labelled satellites!
         if (labelledSatelliteCount > 0)
         {
             if (labelledMatricesBuffer == null || labelledMatricesBuffer.Length != numLabels)
@@ -465,14 +458,11 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
                 renderLayer);
         }
 
-        // Draw the selected satellite
         if (selectedIndex > 0)
         {
             Graphics.DrawMesh(quadMesh, Matrix4x4.TRS(camPos + (directions[selectedIndex] * shellDistance), satRotations[selectedIndex], Vector3.one * satelliteSize), selectedSatelliteMaterial, renderLayer);
         }
 
-        // Update the labels
-        // Sorting the IDs so we have more consistent labels
         Array.Sort(labelIdx);
         for (int i = 0; i < numLabels; i++)
         {
