@@ -109,6 +109,12 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     void Start()
     {
         renderLayer = LayerMask.NameToLayer(renderLayerName);
+
+        if (renderLayer == -1)
+        {
+            Debug.LogWarning($"Layer {renderLayerName} not found. Please add a layer with this name to the project. Satellites will be rendered on the default layer for now.");
+            renderLayer = 0;
+        }
         //cameraDirection = cam.transform;
 
         Screen.sleepTimeout = SleepTimeout.NeverSleep;
@@ -510,9 +516,9 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
 
     public void SetSatelliteTexture(int selectionIndex)
     {
-        satelliteMaterial.mainTexture = satelliteTextures[selectionIndex];
-        labelledSatelliteMaterial.mainTexture = satelliteTextures[selectionIndex];
-        selectedSatelliteMaterial.mainTexture = satelliteTextures[selectionIndex];
+        satelliteMaterial.SetTexture("_BaseMap", satelliteTextures[selectionIndex]);
+        labelledSatelliteMaterial.SetTexture("_BaseMap", satelliteTextures[selectionIndex]);
+        selectedSatelliteMaterial.SetTexture("_BaseMap", satelliteTextures[selectionIndex]);
     }
 
     /// <summary>
@@ -540,6 +546,30 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     public float maxFluxDebrisDensity = 0.0001862074f;
 
     public FilterManager filterManager;
+
+    void ConvertOrbitType(Satellite sat)
+    {
+        if (sat.orbitType == "Low Earth Orbit")
+        {
+            sat.orbitType = "LEO";
+        }
+        else if (sat.orbitType == "Medium Earth Orbit")
+        {
+            sat.orbitType = "MEO";
+        }
+        else if (sat.orbitType == "Geosynchronous Orbit")
+        {
+            sat.orbitType = "GEO";
+        }
+        else if (sat.orbitType == "Highly Elliptical Orbit")
+        {
+            sat.orbitType = "HEO";
+        }
+        return;
+    }
+
+
+
     public void UpdateSatellites(Satellite[] satellites)
     {
         allSatellites = satellites;
@@ -559,6 +589,10 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
             satellites[i].Initialise();
             //currentPositions[i] = satellites[i].positionITRS;
 
+            //Debug.Log($"Satellite {satellites[i].name} with altitude {satellites[i].ApproxAltitude()} km, orbit type {satellites[i].orbitType}");
+
+            ConvertOrbitType(satellites[i]);
+
             // If the satellite doesn't have an orbit type we should infer the type from the altitude and update the orbit type property
             if (satellites[i].orbitType != "LEO" && satellites[i].orbitType != "MEO" && satellites[i].orbitType != "GEO" && satellites[i].orbitType != "HEO")
             {
@@ -567,7 +601,7 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
                 {
                     satellites[i].orbitType = "LEO";
                 }
-                else if (altitude < 35786 + 2000)
+                else if (altitude < 20000)
                 {
                     satellites[i].orbitType = "MEO";
                 }
