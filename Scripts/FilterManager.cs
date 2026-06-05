@@ -93,34 +93,28 @@ public class FilterManager : MonoBehaviour
 
     public void UpdateFilterOptions(Satellite[] satellites)
     {
-        List<string> orbitTypes = new List<string>();
-        List<string> ownerCountries = new List<string>();
-        List<string> constellations = new List<string>();
+        HashSet<string> orbitTypeSet = new HashSet<string>();
+        HashSet<string> ownerCountrySet = new HashSet<string>();
+        HashSet<string> constellationSet = new HashSet<string>();
 
         for (int i = 0; i < satellites.Length; i++)
         {
             string orbit = satellites[i].orbitType;
-
-            if (!string.IsNullOrEmpty(orbit) && !orbitTypes.Contains(orbit))
-            {
-                orbitTypes.Add(orbit);
-            }
+            if (!string.IsNullOrEmpty(orbit))
+                orbitTypeSet.Add(orbit);
 
             string[] owners = satellites[i].ownerCountry;
-            if (owners != null && owners.Length > 0)
-            {
-                if (!string.IsNullOrEmpty(owners[0]) && !ownerCountries.Contains(owners[0]))
-                {
-                    ownerCountries.Add(owners[0]);
-                }
-            }
+            if (owners != null && owners.Length > 0 && !string.IsNullOrEmpty(owners[0]))
+                ownerCountrySet.Add(owners[0]);
 
             string constel = satellites[i].constellation;
-            if (!string.IsNullOrEmpty(constel) && !constellations.Contains(constel))
-            {
-                constellations.Add(constel);
-            }
+            if (!string.IsNullOrEmpty(constel))
+                constellationSet.Add(constel);
         }
+
+        List<string> orbitTypes = new List<string>(orbitTypeSet);
+        List<string> ownerCountries = new List<string>(ownerCountrySet);
+        List<string> constellations = new List<string>(constellationSet);
 
         ownerCountries.Sort();
         orbitTypes.Sort();

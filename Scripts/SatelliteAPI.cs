@@ -10,7 +10,7 @@ public class SatelliteAPI : MonoBehaviour
     public SatelliteRenderer satManager;
     public FutureSatellitesManager futureSatellitesManager;
 
-    [System.Serializable]
+    [System.Serializable, JsonObject]
     public class SatelliteOptions
     {
         public string example;
@@ -59,7 +59,6 @@ public class SatelliteAPI : MonoBehaviour
                     //Debug.Log(webRequest.downloadHandler.text);
 
                     SatelliteOptions options = JsonConvert.DeserializeObject<SatelliteOptions>(webRequest.downloadHandler.text);
-
                     futureSatellitesManager.UpdateModelOptions(options.model);
                     break;
             }
