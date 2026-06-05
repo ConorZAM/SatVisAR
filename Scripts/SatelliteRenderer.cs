@@ -229,7 +229,7 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
     public SatelliteColorMode colorMode = SatelliteColorMode.Custom;
     private SatelliteColorMode lastColorMode = SatelliteColorMode.Custom;
 
-    private Func<Satellite, Color> colorProvider;
+    private Func<int, Color> colorProvider;
 
     public void SetColorMode(SatelliteColorMode mode)
     {
@@ -258,9 +258,9 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
         };
     }
 
-    private Color GetOrbitTypeColor(Satellite satellite)
+    private Color GetOrbitTypeColor(int satelliteIndex)
     {
-        return satellite.orbitType switch
+        return allSatellites[satelliteIndex].orbitType switch
         {
             "LEO" => new Color(0f, 0.396f, 0.341f),
             "MEO" => new Color(0.63f, 0.61f, 0f),
@@ -270,10 +270,23 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
         };
     }
 
-    private Color GetStarlinkColour(Satellite satellite)
+    private Color GetStarlinkColour(int satelliteIndex)
     {
-        return satellite.name.StartsWith("STARLINK") ? Color.green : Color.white;
+        return allSatellites[satelliteIndex].name.StartsWith("STARLINK") ? Color.green : Color.white;
     }
+
+    const float mSun = -26.74f; // apparent magnitude of the sun
+    const float satelliteArea = 10f; // cross-sectional area of the satellite in m^2
+    const float albedo = 1f; // reflectivity of the satellite
+    float r;
+    float theta;
+
+    //private Color GetVisibilityColour(int satelliteIndex)
+    //{
+
+
+    //    //return allSatellites[satelliteIndex].isVisible ? Color.yellow : Color.gray;
+    //}
 
     struct SatelliteMatrix
     {
@@ -347,7 +360,7 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
                 matrix = Matrix4x4.TRS(camPos + (dir * shellDistance), satRotations[i], satelliteSize * sizeScales[i] * Vector3.one),
                 dot = fovDot,
                 index = i,
-                colour = colorProvider(allSatellites[i])
+                colour = colorProvider(i)
             };
 
             if (labelCount < numLabels)
@@ -395,10 +408,10 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
         return visibleSatellites;
     }
 
-    Color GetCollisionColour(Satellite satellite)
+    Color GetCollisionColour(int satelliteIndex)
     {
         // This would be ideal but it doesn't seem to give much difference
-        float t = Mathf.InverseLerp(minFluxDebrisDensity, maxFluxDebrisDensity, satellite.maxFluxDebrisDensity);
+        float t = Mathf.InverseLerp(minFluxDebrisDensity, maxFluxDebrisDensity, allSatellites[satelliteIndex].maxFluxDebrisDensity);
         return Color.Lerp(Color.blue, Color.red, t);
     }
 
@@ -460,7 +473,7 @@ public class SatelliteRenderer : MonoBehaviour, ISelectionManager
 
         if (selectedIndex > 0)
         {
-            Graphics.DrawMesh(quadMesh, Matrix4x4.TRS(camPos + (directions[selectedIndex] * shellDistance), satRotations[selectedIndex], Vector3.one * satelliteSize), selectedSatelliteMaterial, renderLayer);
+            Graphics.DrawMesh(quadMesh, Matrix4x4.TRS(camPos + (directions[selectedIndex] * 0.9f * shellDistance), satRotations[selectedIndex], Vector3.one * satelliteSize), selectedSatelliteMaterial, renderLayer);
         }
 
         Array.Sort(labelIdx);

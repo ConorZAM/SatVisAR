@@ -26,6 +26,16 @@ public class FutureSatellitesManager : MonoBehaviour
         satelliteAPI.GetPredictedSatellites(model, years);
     }
 
+    public void UpdateYears(string model, int years)
+    {
+        if (yearsText)
+        {
+            yearsText.text = $"Years in the future: {years}";
+        }
+
+        satelliteAPI.GetPredictedSatellites(model, years);
+    }
+
     public void UpdateText(float value)
     {
         int years = (int)value * yearIncrement;

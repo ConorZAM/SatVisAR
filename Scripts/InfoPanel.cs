@@ -8,6 +8,7 @@ public class InfoPanel : MonoBehaviour
     public GameObject listPanel;
 
     public GameObject satManagerGO;
+    LabelManager source;
 
     private void Awake()
     {
@@ -26,8 +27,19 @@ public class InfoPanel : MonoBehaviour
 
     public void Show(LabelManager source)
     {
+        this.source = source;
         info.text = source.mySatellite.GetInfo();
         gameObject.SetActive(true);
+    }
+
+    public void UpdateInfo()
+    {
+        if (source == null)
+        {
+            return;
+        }
+
+        info.text = source.mySatellite.GetInfo();
     }
 
     public void Hide()

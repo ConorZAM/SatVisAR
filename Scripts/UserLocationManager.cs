@@ -11,6 +11,7 @@ public class UserLocationManager : MonoBehaviour
 
     public float userLat, userLon, userAlt;
     public float initialHeading;
+    public float initialPitch;
     public string alignmentResult;
     public Vector3 userPositionECEF;
 
@@ -76,7 +77,7 @@ public class UserLocationManager : MonoBehaviour
         northTangent = Quaternion.AngleAxis(-initialHeading, globeNormal).normalized * Vector3.Normalize(Vector3.Cross(globeNormal, eastDirection));
         //origin.transform.rotation = Quaternion.LookRotation(northTangent, globeNormal);
 
-        worldRotation = Quaternion.LookRotation(northTangent, globeNormal);
+        worldRotation = Quaternion.LookRotation(northTangent, globeNormal) * Quaternion.Euler(new Vector3(initialPitch, 0, 0));
     }
 
     //void UpdateWorldRotation()

@@ -14,6 +14,7 @@ public class FilterManager : MonoBehaviour
 
     void UpdateNumSatellites(int number)
     {
+        Debug.Log($"Found {number} satellites");
         for (int i = 0; i < numSatellites.Length; i++)
         {
             numSatellites[i].text = $"Found {number} satellites";
@@ -26,6 +27,34 @@ public class FilterManager : MonoBehaviour
         string owner = ownerCountryDropdown.options[ownerCountryDropdown.value].text;
         string constellation = constellationDropdown.options[constellationDropdown.value].text;
 
+        if (orbitType == "All" && owner == "All" && constellation == "All")
+        {
+            satelliteRenderer.filteredSatelliteIndices = new int[0];
+            UpdateNumSatellites(satelliteRenderer.allSatellites.Length);
+            return;
+        }
+
+        Debug.Log($"Filtering for orbit type: {orbitType}, owner: {owner}, and constellation {constellation}");
+
+        List<int> filteredIndices = new List<int>();
+        Satellite[] allSatellites = satelliteRenderer.allSatellites;
+        for (int i = 0; i < allSatellites.Length; i++)
+        {
+            Satellite satellite = allSatellites[i];
+            if (FiltersMatch(satellite.orbitType, orbitType)
+                && FiltersMatch(satellite.firstOwnerCountry, owner)
+                && FiltersMatch(satellite.constellation, constellation))
+            {
+                filteredIndices.Add(i);
+            }
+        }
+
+        UpdateNumSatellites(filteredIndices.Count);
+        satelliteRenderer.filteredSatelliteIndices = filteredIndices.ToArray();
+    }
+
+    public void ApplyFilters(string orbitType, string owner, string constellation)
+    {
         if (orbitType == "All" && owner == "All" && constellation == "All")
         {
             satelliteRenderer.filteredSatelliteIndices = new int[0];
